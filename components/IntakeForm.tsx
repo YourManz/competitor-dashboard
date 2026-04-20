@@ -4,7 +4,7 @@ import { useState, KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import { useStore } from "@/lib/store"
 import ActivityConsole from "./ActivityConsole"
-import type { CompanyProfile, Competitor } from "@/lib/types"
+import type { CompanyProfile, Competitor, Intel } from "@/lib/types"
 
 const priceTiers = [
   { value: "low", label: "Budget", desc: "Economy pricing" },
@@ -14,7 +14,7 @@ const priceTiers = [
 
 export default function IntakeForm() {
   const router = useRouter()
-  const { setCompany, setCompetitors, setStatus, log, clearLogs } = useStore()
+  const { setCompany, setCompetitors, setIntel, setStatus, log, clearLogs } = useStore()
 
   const [form, setForm] = useState<Omit<CompanyProfile, "services">>({
     name: "",
@@ -137,12 +137,30 @@ export default function IntakeForm() {
       } catch {}
 
       log("─".repeat(48), "dim")
-      log(`Analysis complete — ${competitors.length} competitors mapped`, "success")
-      log("Launching dashboard…", "dim")
+      log(`Geolocation complete — ${competitors.filter((c) => c.lat).length}/${competitors.length} located`, "success")
+
+      // Intel generation
+      setStatus("intel")
+      log("Generating strategic intelligence…", "info")
+      router.push("/dashboard")
+
+      try {
+        const intelRes = await fetch("/api/intel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ company: profile, competitors: useStore.getState().competitors }),
+        })
+        const intelText = await intelRes.text()
+        const intelParsed: Intel = JSON.parse(
+          intelText.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim()
+        )
+        setIntel(intelParsed)
+        log("Intel report ready", "success")
+      } catch {
+        log("Intel generation failed — analysis still complete", "warn")
+      }
 
       setStatus("done")
-      await new Promise((r) => setTimeout(r, 600))
-      router.push("/dashboard")
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Analysis failed"
       log(`Error: ${msg}`, "error")

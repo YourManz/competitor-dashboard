@@ -2,13 +2,13 @@ import type { AppState } from "./types"
 
 const KEY = "competitor-intel-last"
 
-export function saveToStorage(state: Pick<AppState, "company" | "competitors">) {
+export function saveToStorage(state: Pick<AppState, "company" | "competitors" | "intel">) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state))
   } catch {}
 }
 
-export function loadFromStorage(): Pick<AppState, "company" | "competitors"> | null {
+export function loadFromStorage(): Pick<AppState, "company" | "competitors" | "intel"> | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null

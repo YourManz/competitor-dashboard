@@ -31,10 +31,20 @@ Return ONLY a valid JSON array — no markdown, no explanation, just the raw JSO
   "advantages": ["advantage1", "advantage2", "advantage3"],
   "positioning": "One-line market positioning statement",
   "estimatedSize": "startup" | "smb" | "enterprise",
-  "overlapScore": 0.0
+  "overlapScore": 0.0,
+  "priceScore": 0.0,
+  "specializationScore": 0.0,
+  "techScore": 0.0,
+  "reachScore": 0.0
 }
 
-overlapScore is 0.0–1.0: how much this competitor overlaps with ${company.name}'s services/market (1.0 = direct competitor).
+Score definitions (all 0.0–1.0):
+- overlapScore: how much this competitor overlaps with ${company.name}'s services/market (1.0 = direct competitor)
+- priceScore: 0.0 = budget/low-cost, 1.0 = premium/high-end pricing
+- specializationScore: 0.0 = highly specialized/niche, 1.0 = broad generalist with many services
+- techScore: 0.0 = traditional/manual processes, 1.0 = tech-forward/software-driven/digital-first
+- reachScore: 0.0 = local/city-only, 1.0 = national or international
+
 estimatedSize: startup = <10 employees or early stage, smb = 10–200 employees, enterprise = 200+ or well-known brand.`
 
   const encoder = new TextEncoder()
@@ -49,7 +59,6 @@ estimatedSize: startup = <10 employees or early stage, smb = 10–200 employees,
           messages: [{ role: "user", content: prompt }],
         })
 
-        // Extract the text content from the response
         let jsonText = ""
         for (const block of response.content) {
           if (block.type === "text") {
@@ -57,7 +66,6 @@ estimatedSize: startup = <10 employees or early stage, smb = 10–200 employees,
           }
         }
 
-        // Strip markdown fences if present
         jsonText = jsonText.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim()
 
         controller.enqueue(encoder.encode(jsonText))
