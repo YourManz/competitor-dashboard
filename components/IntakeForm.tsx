@@ -3,6 +3,7 @@
 import { useState, KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import { useStore } from "@/lib/store"
+import ActivityConsole from "./ActivityConsole"
 import type { CompanyProfile, Competitor } from "@/lib/types"
 
 const priceTiers = [
@@ -13,7 +14,7 @@ const priceTiers = [
 
 export default function IntakeForm() {
   const router = useRouter()
-  const { setCompany, setCompetitors, setStatus } = useStore()
+  const { setCompany, setCompetitors, setStatus, log, clearLogs } = useStore()
 
   const [form, setForm] = useState<Omit<CompanyProfile, "services">>({
     name: "",
@@ -52,12 +53,19 @@ export default function IntakeForm() {
     }
     setError(null)
     setLoading(true)
+    clearLogs()
 
     const profile: CompanyProfile = { ...form, services }
     setCompany(profile)
     setStatus("analyzing")
 
+    log(`Initializing competitor research for "${profile.name}"`, "dim")
+    log(`Industry: ${profile.industry}  ·  Location: ${profile.city}, ${profile.country}`, "dim")
+    log("Sending company profile to Claude…", "info")
+
     try {
+      log("Claude is searching the web for competitors…", "info")
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,11 +88,24 @@ export default function IntakeForm() {
         throw new Error("Failed to parse competitor data")
       }
 
+      log(`Claude returned ${competitors.length} competitor${competitors.length !== 1 ? "s" : ""}`, "success")
+
+      const sizeLabel = { startup: "startup", smb: "SMB", enterprise: "enterprise" }
+      for (const c of competitors) {
+        log(
+          `  Found: ${c.name}  (${c.city}, ${c.country})  ·  ${sizeLabel[c.estimatedSize]}  ·  ${Math.round(c.overlapScore * 100)}% overlap`,
+          "success"
+        )
+      }
+
       setStatus("geocoding")
       setCompetitors(competitors)
 
-      // Geocode each competitor with a 1s delay between calls
+      log("─".repeat(48), "dim")
+      log("Resolving geolocations via OpenStreetMap…", "info")
+
       for (const c of competitors) {
+        log(`  Geocoding ${c.name}  (${c.city}, ${c.country})…`, "info")
         try {
           const geo = await fetch(
             `/api/geocode?city=${encodeURIComponent(c.city)}&country=${encodeURIComponent(c.country)}`
@@ -92,27 +113,41 @@ export default function IntakeForm() {
           const { lat, lng } = await geo.json()
           if (lat && lng) {
             useStore.getState().updateCompetitor(c.id, { lat, lng })
+            log(`    ↳ ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "success")
+          } else {
+            log(`    ↳ no coordinates found`, "warn")
           }
-        } catch {}
+        } catch {
+          log(`    ↳ geocode request failed`, "warn")
+        }
         await new Promise((r) => setTimeout(r, 1100))
       }
 
-      // Also geocode the company itself
+      // Geocode the company itself
+      log(`  Geocoding your company  (${profile.city}, ${profile.country})…`, "info")
       try {
         const geo = await fetch(
           `/api/geocode?city=${encodeURIComponent(profile.city)}&country=${encodeURIComponent(profile.country)}`
         )
         const { lat, lng } = await geo.json()
         if (lat && lng) {
-          setCompany({ ...profile, ...(lat && { lat }), ...(lng && { lng }) } as CompanyProfile & { lat?: number; lng?: number })
+          setCompany({ ...profile, lat, lng } as CompanyProfile & { lat?: number; lng?: number })
+          log(`    ↳ ${lat.toFixed(4)}, ${lng.toFixed(4)}`, "success")
         }
       } catch {}
 
+      log("─".repeat(48), "dim")
+      log(`Analysis complete — ${competitors.length} competitors mapped`, "success")
+      log("Launching dashboard…", "dim")
+
       setStatus("done")
+      await new Promise((r) => setTimeout(r, 600))
       router.push("/dashboard")
     } catch (e) {
-      setStatus("error", e instanceof Error ? e.message : "Analysis failed")
-      setError(e instanceof Error ? e.message : "Analysis failed")
+      const msg = e instanceof Error ? e.message : "Analysis failed"
+      log(`Error: ${msg}`, "error")
+      setStatus("error", msg)
+      setError(msg)
       setLoading(false)
     }
   }
@@ -121,7 +156,7 @@ export default function IntakeForm() {
     key: keyof typeof form,
     label: string,
     placeholder: string,
-    opts: { required?: boolean; textarea?: boolean; hint?: string } = {}
+    opts: { required?: boolean; textarea?: boolean } = {}
   ) => (
     <div>
       <label className="block text-xs text-white/50 mb-1.5">
@@ -134,7 +169,8 @@ export default function IntakeForm() {
           onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
           placeholder={placeholder}
           rows={3}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 resize-none"
+          disabled={loading}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 resize-none disabled:opacity-40"
         />
       ) : (
         <input
@@ -142,10 +178,10 @@ export default function IntakeForm() {
           value={form[key] as string}
           onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
           placeholder={placeholder}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50"
+          disabled={loading}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 disabled:opacity-40"
         />
       )}
-      {opts.hint && <p className="text-[11px] text-white/25 mt-1">{opts.hint}</p>}
     </div>
   )
 
@@ -165,22 +201,18 @@ export default function IntakeForm() {
         </div>
 
         <div className="space-y-4">
-          {/* Name + website */}
           <div className="grid grid-cols-2 gap-3">
             {field("name", "Company name", "Acme Inc.", { required: true })}
             {field("website", "Website", "https://acme.com")}
           </div>
 
-          {/* Location */}
           <div className="grid grid-cols-2 gap-3">
             {field("city", "City", "Vancouver", { required: true })}
             {field("country", "Country", "Canada", { required: true })}
           </div>
 
-          {/* Industry */}
           {field("industry", "Industry / niche", "Construction bookkeeping", { required: true })}
 
-          {/* Description */}
           {field("description", "What does your company do?", "We provide specialized bookkeeping for residential construction contractors in BC…", {
             required: true,
             textarea: true,
@@ -196,11 +228,13 @@ export default function IntakeForm() {
                 onChange={(e) => setServiceInput(e.target.value)}
                 onKeyDown={handleServiceKey}
                 placeholder="Type a service, press Enter"
-                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50"
+                disabled={loading}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 disabled:opacity-40"
               />
               <button
                 onClick={addService}
-                className="px-3 py-2 rounded-lg bg-white/10 text-white/60 hover:bg-white/15 text-sm"
+                disabled={loading}
+                className="px-3 py-2 rounded-lg bg-white/10 text-white/60 hover:bg-white/15 text-sm disabled:opacity-40"
               >
                 Add
               </button>
@@ -213,17 +247,14 @@ export default function IntakeForm() {
                     className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
                   >
                     {s}
-                    <button onClick={() => removeService(s)} className="text-indigo-400 hover:text-white">
-                      ×
-                    </button>
+                    <button onClick={() => removeService(s)} className="text-indigo-400 hover:text-white">×</button>
                   </span>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Target market */}
-          {field("targetMarket", "Target market", "Small residential construction firms, 1–20 employees", {})}
+          {field("targetMarket", "Target market", "Small residential construction firms, 1–20 employees")}
 
           {/* Price tier */}
           <div>
@@ -233,7 +264,8 @@ export default function IntakeForm() {
                 <button
                   key={t.value}
                   onClick={() => setForm((f) => ({ ...f, priceTier: t.value }))}
-                  className={`p-2.5 rounded-lg border text-left transition-colors ${
+                  disabled={loading}
+                  className={`p-2.5 rounded-lg border text-left transition-colors disabled:opacity-40 ${
                     form.priceTier === t.value
                       ? "border-indigo-500 bg-indigo-500/10"
                       : "border-white/10 bg-white/5 hover:border-white/20"
@@ -266,6 +298,11 @@ export default function IntakeForm() {
               "Research competitors →"
             )}
           </button>
+
+          {/* Activity console — visible once analysis starts */}
+          {loading && (
+            <ActivityConsole active className="mt-2" />
+          )}
         </div>
       </div>
     </div>

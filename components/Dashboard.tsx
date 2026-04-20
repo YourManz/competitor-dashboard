@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import dynamic from "next/dynamic"
 import { useStore } from "@/lib/store"
 import CompetitorCard from "./CompetitorCard"
+import ActivityConsole from "./ActivityConsole"
 import type { Competitor } from "@/lib/types"
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false })
@@ -87,6 +88,13 @@ export default function Dashboard() {
       {status === "error" && (
         <div className="px-6 py-2.5 bg-red-600/20 border-b border-red-500/20 flex-shrink-0">
           <span className="text-sm text-red-300">{error}</span>
+        </div>
+      )}
+
+      {/* Console — shown during active analysis */}
+      {(status === "analyzing" || status === "geocoding") && (
+        <div className="px-6 pt-2 flex-shrink-0">
+          <ActivityConsole active />
         </div>
       )}
 

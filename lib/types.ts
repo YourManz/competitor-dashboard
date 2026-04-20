@@ -26,6 +26,15 @@ export interface Competitor {
   lng?: number
 }
 
+export type LogLevel = "info" | "success" | "warn" | "error" | "dim"
+
+export interface LogEntry {
+  id: number
+  ts: string
+  level: LogLevel
+  message: string
+}
+
 export interface AppState {
   company: CompanyProfile | null
   competitors: Competitor[]
@@ -33,4 +42,5 @@ export interface AppState {
   error: string | null
   activeCompetitorId: string | null
   activeView: "map" | "web"
+  logs: LogEntry[]
 }
